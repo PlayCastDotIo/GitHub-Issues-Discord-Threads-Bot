@@ -1,7 +1,9 @@
 import { graphql } from "@octokit/graphql";
 import { Octokit } from "@octokit/rest";
+import { HttpError } from '@octokit/request-error';
 import { Attachment, Collection, Message } from "discord.js";
 import { config } from "../config";
+import { getGitToken } from "./github";
 import { GitIssue, Thread } from "../interfaces";
 import {
   ActionValue,
@@ -12,21 +14,31 @@ import {
 } from "../logger";
 import { store } from "../store";
 
-export const octokit = new Octokit({
-  auth: config.GITHUB_ACCESS_TOKEN,
-  baseUrl: "https://api.github.com",
-});
+// Step 2: Async Initialization of `octokit`
+let octokit: Octokit; // Declare `octokit` without initializing.
+
+async function initializeOctokit() {
+  const GITHUB_ACCESS_TOKEN = await getGitToken();
+  octokit = new Octokit({
+    auth: GITHUB_ACCESS_TOKEN,
+    baseUrl: "https://api.github.com",
+  });
+}
+
+initializeOctokit();
+
+const repoCredentials = {
+  owner: config.GITHUB_USERNAME || "",
+  repo: config.GITHUB_REPOSITORY || "",
+};
+
+export { octokit, repoCredentials };
 
 const graphqlWithAuth = graphql.defaults({
   headers: {
-    authorization: `token  ${process.env.GITHUB_ACCESS_TOKEN}`,
+    authorization: `token  ${getGitToken()}`,
   },
 });
-
-export const repoCredentials = {
-  owner: config.GITHUB_USERNAME,
-  repo: config.GITHUB_REPOSITORY,
-};
 
 const info = (action: ActionValue, thread: Thread) =>
   logger.info(`${Triggerer.Discord} | ${action} | ${getGithubUrl(thread)}`);
@@ -112,9 +124,21 @@ export async function closeIssue(thread: Thread) {
   }
 
   const response = await update(issue_number, "closed");
-  if (response === true) info(Actions.Closed, thread);
-  else if (response instanceof Error)
-    error(`Failed to close issue: ${response.message}`, thread);
+
+  if (response === true) {
+    info(Actions.Closed, thread);
+  }
+  else if (response instanceof Error ) {
+    // get the error message from the response
+    const errorResponse = response as HttpError;
+    error(`Failed to close issue: ${errorResponse.message}`, thread);
+    // check if it was a bad authorization error
+    if (errorResponse.status === 401) {
+      getGitToken();
+      initializeOctokit();
+    }
+
+  }
   else error("Failed to close issue due to an unknown error", thread);
 }
 
@@ -289,7 +313,8 @@ export async function deleteComment(thread: Thread, comment_id: number) {
 export async function getIssues() {
   try {
     const response = await octokit.rest.issues.listForRepo({
-      ...repoCredentials,
+      owner: repoCredentials.owner!,
+      repo: repoCredentials.repo!,
       state: "all",
     });
 

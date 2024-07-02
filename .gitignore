@@ -6,3 +6,6 @@ yarn.lock
 
 dist
 logs
+
+secrets.json
+key.pem

@@ -1,5 +1,10 @@
 import express from "express";
 import { GithubHandlerFunction } from "../interfaces";
+import path from "path";
+import { readFileSync } from "fs";
+import { createAppAuth } from "@octokit/auth-app";
+import { Octokit } from "@octokit/rest";
+import { config } from "../config";
 import {
   handleClosed,
   handleCreated,
@@ -12,6 +17,45 @@ import {
 
 const app = express();
 app.use(express.json());
+
+async function generateGitToken(): Promise<string> {
+  // Read the private key from file
+  const keyfilePath = path.join(__dirname, "../../key.pem");
+  const privateKey = readFileSync(keyfilePath, "utf8");
+
+  // Create authentication object
+  const auth = createAppAuth({
+    appId: String(config.GITHUB_APP_ID),
+    privateKey: String(privateKey),
+    installationId: String(config.GITHUB_INSTALLATION_ID)
+  });
+
+  // Authenticate and get installation access token
+  const { token } = await auth({ type: "installation" });
+  return token;
+}
+
+let gitToken: string;
+
+async function isTokenValid(token: string): Promise<boolean> {
+  // Check if the token is valid
+  const octokit = new Octokit({ auth: token });
+  try {
+    await octokit.rest.apps.getAuthenticated();
+  } catch (error) {
+    console.error("Error validating token: ", error);
+    return false;
+  }
+  return true;
+}
+
+// TODO: need to call this on error of git actions
+export async function getGitToken(): Promise<string> {
+  if (!gitToken || !(await isTokenValid(gitToken))) {
+    gitToken = await generateGitToken();
+  }
+  return gitToken;
+}
 
 export function initGithub() {
   app.get("", (_, res) => {
@@ -36,7 +80,7 @@ export function initGithub() {
     res.json({ msg: "ok" });
   });
 
-  const PORT = process.env.PORT || 5000;
+  const PORT = process.env.PORT || 5001;
   app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
   });
