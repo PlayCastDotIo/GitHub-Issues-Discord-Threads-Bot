@@ -1,6 +1,6 @@
 import { graphql } from "@octokit/graphql";
 import { Octokit } from "@octokit/rest";
-import { HttpError } from '@octokit/request-error';
+import { RequestError } from "@octokit/request-error";
 import { Attachment, Collection, Message } from "discord.js";
 import { config } from "../config";
 import { getGitToken } from "./github";
@@ -13,19 +13,43 @@ import {
   logger,
 } from "../logger";
 import { store } from "../store";
+// import { get } from "http";
 
-// Step 2: Async Initialization of `octokit`
+let gitToken: string;
 let octokit: Octokit; // Declare `octokit` without initializing.
+let graphqlWithAuth: typeof graphql;
 
-async function initializeOctokit() {
-  const GITHUB_ACCESS_TOKEN = await getGitToken();
+
+// Function to refresh the token
+// will init both octokit and graphql instances with a fresh token since they both use the same one
+async function refreshToken() {
+  const token = await getGitToken().catch((err) => {
+    console.error("failed to get token: ", err);
+    throw err;
+  });
+  gitToken = token;
+
+  // Create octokit instance
   octokit = new Octokit({
-    auth: GITHUB_ACCESS_TOKEN,
+    auth: gitToken,
     baseUrl: "https://api.github.com",
+  });
+
+  // Create graphql instance
+  graphqlWithAuth = graphql.defaults({
+    headers: {
+      authorization: `token ${token}`,
+    },
   });
 }
 
-initializeOctokit();
+// init the octokit and graphql instances with a fresh token on boot
+refreshToken().then(() => {
+  console.log("refreshed token");
+}).catch((err) => {
+  console.error("failed to refresh token: ", err);
+});
+
 
 const repoCredentials = {
   owner: config.GITHUB_USERNAME || "",
@@ -34,14 +58,10 @@ const repoCredentials = {
 
 export { octokit, repoCredentials };
 
-const graphqlWithAuth = graphql.defaults({
-  headers: {
-    authorization: `token  ${getGitToken()}`,
-  },
-});
-
+// logging functions
 const info = (action: ActionValue, thread: Thread) =>
   logger.info(`${Triggerer.Discord} | ${action} | ${getGithubUrl(thread)}`);
+
 const error = (action: ActionValue | string, thread?: Thread) =>
   logger.error(
     `${Triggerer.Discord} | ${action} ` +
@@ -103,15 +123,32 @@ function formatIssuesToThreads(issues: GitIssue[]): Thread[] {
 }
 
 async function update(issue_number: number, state: "open" | "closed") {
-  try {
+  const sendUpdate = async () => {
     await octokit.rest.issues.update({
       ...repoCredentials,
       issue_number,
       state,
     });
     return true;
+  };
+
+  try {
+    sendUpdate();
   } catch (err) {
-    return err;
+    if (err instanceof RequestError) {
+      if (err.status === 401 || err.message.includes("Bad credentials")) {
+        try {
+          await refreshToken();
+          console.log("Refreshed octokit in update");
+          await sendUpdate();
+        } catch (refreshErr) {
+          console.error("Failed to initialize octokit in update: ", refreshErr);
+          return refreshErr;
+        }
+      }
+    } else {
+      return err;
+    }
   }
 }
 
@@ -127,19 +164,11 @@ export async function closeIssue(thread: Thread) {
 
   if (response === true) {
     info(Actions.Closed, thread);
-  }
-  else if (response instanceof Error ) {
-    // get the error message from the response
-    const errorResponse = response as HttpError;
-    error(`Failed to close issue: ${errorResponse.message}`, thread);
-    // check if it was a bad authorization error
-    if (errorResponse.status === 401) {
-      getGitToken();
-      initializeOctokit();
-    }
-
-  }
-  else error("Failed to close issue due to an unknown error", thread);
+  } else if (response instanceof Error) {
+    error(`Failed to close issue: ${response.message}`, thread);
+  } else {
+    error("Failed to close issue due to an unknown error", thread);
+  } 
 }
 
 export async function openIssue(thread: Thread) {
@@ -151,10 +180,13 @@ export async function openIssue(thread: Thread) {
   }
 
   const response = await update(issue_number, "open");
-  if (response === true) info(Actions.Reopened, thread);
-  else if (response instanceof Error)
+  if (response === true) {
+    info(Actions.Reopened, thread);
+  } else if (response instanceof Error) {
     error(`Failed to open issue: ${response.message}`, thread);
-  else error("Failed to open issue due to an unknown error", thread);
+  } else {
+    error("Failed to open issue due to an unknown error", thread);
+  }
 }
 
 export async function lockIssue(thread: Thread) {
@@ -172,7 +204,31 @@ export async function lockIssue(thread: Thread) {
 
     info(Actions.Locked, thread);
   } catch (err) {
-    if (err instanceof Error) {
+    if (err instanceof RequestError) {
+      if (err.status === 401 || err.message.includes("Bad credentials")) {
+        // refresh the token
+        refreshToken().then(() => {
+          console.log("refreshed octokit in lock");
+        }).catch((err) => {
+          console.error("failed to initialize octokit in lock: ", err);
+          return err;
+        });
+
+        // try again
+        octokit.rest.issues.lock({
+          ...repoCredentials,
+          issue_number,
+        }).then(() => {
+          info(Actions.Locked, thread);
+        }).catch((err) => {
+          if (err instanceof Error) {
+            error(`Failed to lock issue: ${err.message}`, thread);
+          } else {
+            error("Failed to lock issue due to an unknown error", thread);
+          }
+        });
+      }
+    } else if (err instanceof Error) {
       error(`Failed to lock issue: ${err.message}`, thread);
     } else {
       error("Failed to lock issue due to an unknown error", thread);
@@ -195,7 +251,31 @@ export async function unlockIssue(thread: Thread) {
 
     info(Actions.Unlocked, thread);
   } catch (err) {
-    if (err instanceof Error) {
+    if (err instanceof RequestError) {
+      if (err.status === 401 || err.message.includes("Bad credentials")) {
+        // refresh the token
+        refreshToken().then(() => {
+          console.log("refreshed octokit in unlock");
+        }).catch((err) => {
+          console.error("failed to initialize octokit in unlock: ", err);
+          return err;
+        });
+
+        // try again
+        octokit.rest.issues.unlock({
+          ...repoCredentials,
+          issue_number,
+        }).then(() => {
+          info(Actions.Unlocked, thread);
+        }).catch((err) => {
+          if (err instanceof Error) {
+            error(`Failed to unlock issue: ${err.message}`, thread);
+          } else {
+            error("Failed to unlock issue due to an unknown error", thread);
+          }
+        });
+      }
+    } else if (err instanceof Error) {
       error(`Failed to unlock issue: ${err.message}`, thread);
     } else {
       error("Failed to unlock issue due to an unknown error", thread);
@@ -211,11 +291,12 @@ export async function createIssue(thread: Thread, params: Message) {
     return;
   }
 
-  try {
+  const sendCretaeIssue = async () => {
     const labels = appliedTags?.map(
       (id) => store.availableTags.find((item) => item.id === id)?.name || "",
     );
 
+    labels?.push("triage", "discord");
     const body = getIssueBody(params);
     const response = await octokit.rest.issues.create({
       ...repoCredentials,
@@ -232,9 +313,20 @@ export async function createIssue(thread: Thread, params: Message) {
     } else {
       error("Failed to create issue - No response data", thread);
     }
+  };
+
+  try {
+    await sendCretaeIssue();
   } catch (err) {
-    if (err instanceof Error) {
-      error(`Failed to create issue: ${err.message}`, thread);
+    if (err instanceof RequestError) {
+      if (err.status === 401 || err.message.includes("Bad credentials")) {
+        try {
+          await refreshToken();
+          await sendCretaeIssue();
+        } catch (refreshErr) {
+          console.error("Failed to initialize octokit in create issue: ", refreshErr);
+        }
+      }
     } else {
       error("Failed to create issue due to an unknown error", thread);
     }
@@ -250,10 +342,10 @@ export async function createIssueComment(thread: Thread, params: Message) {
     return;
   }
 
-  try {
+  const createComment = async () => {
     const response = await octokit.rest.issues.createComment({
       ...repoCredentials,
-      issue_number: thread.number!,
+      issue_number,
       body,
     });
     if (response && response.data) {
@@ -264,11 +356,20 @@ export async function createIssueComment(thread: Thread, params: Message) {
     } else {
       error("Failed to create comment - No response data", thread);
     }
+  };
+
+  try {
+    await createComment();
   } catch (err) {
-    if (err instanceof Error) {
-      error(`Failed to create comment: ${err.message}`, thread);
-    } else {
-      error("Failed to create comment due to an unknown error", thread);
+    if (err instanceof RequestError) {
+      if (err.status === 401 || err.message.includes("Bad credentials")) {
+        try {
+          await refreshToken();
+          await createComment();
+        } catch (refreshErr) {
+          console.error("Failed to initialize octokit in create comment: ", refreshErr);
+        }
+      }
     }
   }
 }
@@ -280,13 +381,27 @@ export async function deleteIssue(thread: Thread) {
     return;
   }
 
-  try {
-    await graphqlWithAuth(
-      `mutation {deleteIssue(input: {issueId: "${node_id}"}) {clientMutationId}}`,
-    );
+  const query = `mutation {deleteIssue(input: {issueId: "${node_id}"}) {clientMutationId}}`;
+
+  const performDelete = async () => {
+    await graphqlWithAuth(query);
     info(Actions.Deleted, thread);
+  };
+
+  try {
+    await performDelete();
   } catch (err) {
-    if (err instanceof Error) {
+    if (err instanceof RequestError) {
+      if (err.status === 401 || err.message.includes("Bad credentials")) {
+        try {
+          await refreshToken();
+          console.log("Refreshed octokit in delete issue");
+          await performDelete();
+        } catch (refreshErr) {
+          console.error("Failed to initialize octokit in delete issue: ", refreshErr);
+        }
+      }
+    } else if (err instanceof Error) {
       error(`Error deleting issue: ${err.message}`, thread);
     } else {
       error("Error deleting issue due to an unknown error", thread);
@@ -295,14 +410,26 @@ export async function deleteIssue(thread: Thread) {
 }
 
 export async function deleteComment(thread: Thread, comment_id: number) {
-  try {
+  const performDelete = async () => {
     await octokit.rest.issues.deleteComment({
       ...repoCredentials,
       comment_id,
     });
     info(Actions.DeletedComment, thread);
+  };
+
+  try {
+    await performDelete();
   } catch (err) {
-    if (err instanceof Error) {
+    if (err instanceof RequestError && (err.status === 401 || err.message.includes("Bad credentials"))) {
+      try {
+        await refreshToken();
+        console.log("Refreshed octokit in delete comment");
+        await performDelete();
+      } catch (refreshErr) {
+        console.error("Failed to initialize octokit in delete comment: ", refreshErr);
+      }
+    } else if (err instanceof Error) {
       error(`Failed to delete comment: ${err.message}`, thread);
     } else {
       error("Failed to delete comment due to an unknown error", thread);
@@ -311,7 +438,7 @@ export async function deleteComment(thread: Thread, comment_id: number) {
 }
 
 export async function getIssues() {
-  try {
+  const fetchIssues = async () => {
     const response = await octokit.rest.issues.listForRepo({
       owner: repoCredentials.owner!,
       repo: repoCredentials.repo!,
@@ -323,21 +450,31 @@ export async function getIssues() {
       return [];
     }
 
-    await fillCommentsData(); // Wait for comments data to be filled
-
+    await fillCommentsData();
     return formatIssuesToThreads(response.data as GitIssue[]);
+  };
+
+  try {
+    return await fetchIssues();
   } catch (err) {
-    if (err instanceof Error) {
-      error(`Failed to get issues: ${err.message}`);
+    if (err instanceof RequestError && (err.status === 401 || err.message.includes("Bad credentials"))) {
+      try {
+        await refreshToken();
+        console.log("Refreshed octokit in get issues");
+        return await fetchIssues();
+      } catch (refreshErr) {
+        console.error("Failed to initialize octokit in get issues: ", refreshErr);
+        return [];
+      }
     } else {
       error("Failed to get issues due to an unknown error");
+      return [];
     }
-    return [];
   }
 }
 
 async function fillCommentsData() {
-  try {
+  const listComments = async () => {
     const response = await octokit.rest.issues.listCommentsForRepo({
       ...repoCredentials,
     });
@@ -353,9 +490,19 @@ async function fillCommentsData() {
     } else {
       error("Failed to load comments - No response data");
     }
+  };
+
+  try {
+    await listComments();
   } catch (err) {
-    if (err instanceof Error) {
-      error(`Failed to load comments: ${err.message}`);
+    if (err instanceof RequestError && (err.status === 401 || err.message.includes("Bad credentials"))) {
+      try {
+        await refreshToken();
+        console.log("Refreshed octokit in fill comments");
+        await listComments();
+      } catch (refreshErr) {
+        console.error("Failed to initialize octokit in fill comments: ", refreshErr);
+      }
     } else {
       error("Failed to load comments due to an unknown error");
     }

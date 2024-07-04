@@ -19,6 +19,7 @@ const app = express();
 app.use(express.json());
 
 async function generateGitToken(): Promise<string> {
+  console.log("generating new token, old token: ", gitToken);
   // Read the private key from file
   const keyfilePath = path.join(__dirname, "../../key.pem");
   const privateKey = readFileSync(keyfilePath, "utf8");
@@ -31,10 +32,16 @@ async function generateGitToken(): Promise<string> {
   });
 
   // Authenticate and get installation access token
-  const { token } = await auth({ type: "installation" });
-  return token;
+  try {
+    const { token } = await auth({ type: "installation" });
+    return token;
+  } catch (error) {
+    console.error("Error generating token: ", error);
+    return "";
+  }
 }
 
+// intial value 
 let gitToken: string;
 
 async function isTokenValid(token: string): Promise<boolean> {
@@ -44,6 +51,7 @@ async function isTokenValid(token: string): Promise<boolean> {
     await octokit.rest.apps.getAuthenticated();
   } catch (error) {
     console.error("Error validating token: ", error);
+    console.log("Invalid Token: ", token);
     return false;
   }
   return true;
@@ -54,6 +62,7 @@ export async function getGitToken(): Promise<string> {
   if (!gitToken || !(await isTokenValid(gitToken))) {
     gitToken = await generateGitToken();
   }
+  // this will only return a valid token
   return gitToken;
 }
 
