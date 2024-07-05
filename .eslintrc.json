@@ -16,7 +16,7 @@
   },
   "rules": {
     "semi": ["warn", "always"],
-    "quotes": ["warn", "double"],
+    "quotes": ["warn", "single"],
     "arrow-parens": ["warn", "always"],
     "no-unused-vars": "warn",
     "no-console": "off",

@@ -1,15 +1,15 @@
-import { ForumChannel, MessagePayload, ThreadChannel } from "discord.js";
-import { config } from "../config";
-import { Thread } from "../interfaces";
+import { ForumChannel, MessagePayload, ThreadChannel } from 'discord.js';
+import { config } from '../config';
+import { Thread } from '../interfaces';
 import {
   ActionValue,
   Actions,
   Triggerer,
   getDiscordUrl,
   logger,
-} from "../logger";
-import { store } from "../store";
-import client from "./discord";
+} from '../logger';
+import { store } from '../store';
+import client from './discord';
 
 const info = (action: ActionValue, thread: Thread) =>
   logger.info(`${Triggerer.Github} | ${action} | ${getDiscordUrl(thread)}`);
@@ -35,7 +35,7 @@ export function createThread({
   forum.threads
     .create({
       message: {
-        content: body + "/" + login, // TODO
+        content: body + '/' + login, // TODO
       },
       name: title,
       appliedTags,
@@ -79,7 +79,7 @@ export async function createComment({
         .send(messagePayload)
         .then(({ id }) => {
           thread?.comments.push({ id, git_id });
-          webhook.delete("Cleanup");
+          webhook.delete('Cleanup');
 
           info(Actions.Commented, thread);
         })

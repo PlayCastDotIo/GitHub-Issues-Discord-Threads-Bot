@@ -1,4 +1,4 @@
-import dotenv from "dotenv";
+import dotenv from 'dotenv';
 
 dotenv.config();
 
@@ -19,7 +19,7 @@ if (
   !GITHUB_INSTALLATION_ID ||
   !GITHUB_APP_ID
 ) {
-  throw new Error("Missing environment variables");
+  throw new Error('Missing environment variables');
 }
 
 export const config = {

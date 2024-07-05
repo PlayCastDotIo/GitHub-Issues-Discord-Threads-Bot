@@ -1,4 +1,4 @@
-import { Request } from "express";
+import { Request } from 'express';
 
 interface Thread {
   id: string;
@@ -25,7 +25,7 @@ interface GitIssue {
   number: number;
   node_id: string;
   locked: boolean;
-  state: "open" | "closed";
+  state: 'open' | 'closed';
 }
 
 interface GitHubLabel {

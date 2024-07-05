@@ -1,5 +1,5 @@
-import { GuildForumTag } from "discord.js";
-import { Thread } from "./interfaces";
+import { GuildForumTag } from 'discord.js';
+import { Thread } from './interfaces';
 
 class Store {
   threads: Thread[] = [];

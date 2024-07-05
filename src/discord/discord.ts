@@ -3,8 +3,8 @@ import {
   Events,
   GatewayIntentBits,
   SimpleShardingStrategy,
-} from "discord.js";
-import { config } from "../config";
+} from 'discord.js';
+import { config } from '../config';
 import {
   handleChannelUpdate,
   handleClientReady,
@@ -13,7 +13,7 @@ import {
   handleThreadCreate,
   handleThreadDelete,
   handleThreadUpdate,
-} from "./discordHandlers";
+} from './discordHandlers';
 
 const client = new Client({
   intents: [

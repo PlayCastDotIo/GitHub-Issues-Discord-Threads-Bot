@@ -7,8 +7,8 @@ import {
   NonThreadGuildBasedChannel,
   PartialMessage,
   ThreadChannel,
-} from "discord.js";
-import { config } from "../config";
+} from 'discord.js';
+import { config } from '../config';
 import {
   closeIssue,
   createIssue,
@@ -19,10 +19,10 @@ import {
   lockIssue,
   openIssue,
   unlockIssue,
-} from "../github/githubActions";
-import { logger } from "../logger";
-import { store } from "../store";
-import { Thread } from "../interfaces";
+} from '../github/githubActions';
+import { logger } from '../logger';
+import { store } from '../store';
+import { Thread } from '../interfaces';
 
 export async function handleClientReady(client: Client) {
   logger.info(`Logged in as ${client.user?.tag}!`);
