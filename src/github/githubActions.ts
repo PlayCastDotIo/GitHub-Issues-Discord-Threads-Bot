@@ -12,7 +12,6 @@ import {
   logger,
 } from '../logger';
 import { store } from '../store';
-// import { get } from 'http';
 
 
 const repoCredentials = {
@@ -352,6 +351,7 @@ export async function deleteIssue(thread: Thread) {
       }
     } else if (err instanceof Error) {
       error(`Error deleting issue: ${err.message}`, thread);
+      console.error(err);
     } else {
       error('Error deleting issue due to an unknown error', thread);
     }
@@ -418,6 +418,7 @@ export async function getIssues() {
       }
     } else {
       error('Failed to get issues due to an unknown error');
+      console.log(err);
       return [];
     }
   }

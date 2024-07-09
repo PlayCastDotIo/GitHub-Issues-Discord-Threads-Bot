@@ -10,7 +10,7 @@
     "format": "prettier --write \"**/*.{json,ts}\"",
     "lint": "eslint . --ext ts --fix",
     "forward": "ssh -R 80:localhost:5000 bitnami@discordwebhook.playcast.io",
-    "pm2": "pm2 start dist/index.js --name gitbot"
+    "pm2": "pm2 start dist/index.js --name discord-bot"
   },
   "author": "Nicat",
   "license": "MIT",
