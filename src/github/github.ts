@@ -1,6 +1,7 @@
 import express from 'express';
 import { GithubHandlerFunction } from '../interfaces';
 import {
+  handleOpened,
   handleClosed,
   handleCreated,
   handleDeleted,
@@ -21,6 +22,7 @@ export function initGithub() {
     [key: string]: GithubHandlerFunction;
   } = {
     created: (req) => handleCreated(req),
+    opened: (req) => handleOpened(req),
     closed: (req) => handleClosed(req),
     reopened: (req) => handleReopened(req),
     locked: (req) => handleLocked(req),

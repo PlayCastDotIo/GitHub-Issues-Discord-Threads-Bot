@@ -7,6 +7,7 @@ import {
   lockThread,
   unarchiveThread,
   unlockThread,
+  addThreadTags,
 } from '../discord/discordActions';
 import { GitHubLabel } from '../interfaces';
 import { store } from '../store';
@@ -24,6 +25,13 @@ export async function handleOpened(req: Request) {
   console.log('gitHdl - opened');
   if (!req.body.issue) return;
   const { node_id, number, title, user, body, labels } = req.body.issue;
+
+  // check if "discord" is contained in the labels, if not, return
+  if (!labels.some((label: GitHubLabel) => label.name === 'discord')) { 
+    console.log('No discord label found, not creating thread');
+    return;
+  }
+  // if the thread already exists, don't create a new one
   if (store.threads.some((thread) => thread.node_id === node_id)) return;
 
   const { login } = user;
@@ -73,7 +81,10 @@ export async function handleClosed(req: Request) {
   console.log('gitHdl - closed');
   const node_id = await getIssueNodeId(req);
   if (node_id !== undefined) {
+    addThreadTags(node_id, ['closed']);
     archiveThread(node_id);
+    // add the label "closed" to the issue
+    // deleteThread(node_id);
   } else {
     console.error('Failed to get node_id for closed issue');
   }

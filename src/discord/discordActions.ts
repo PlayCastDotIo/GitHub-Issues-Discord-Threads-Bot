@@ -52,6 +52,19 @@ export function createThread({
     });
 }
 
+export async function addThreadTags(node_id: string | undefined, tags: string[]) {
+  const { thread, channel } = await getThreadChannel(node_id);
+  if (!thread || !channel) return;
+
+  const forum = client.channels.cache.get(
+    config.DISCORD_CHANNEL_ID,
+  ) as ForumChannel;
+
+  forum.threads.fetch(thread.id).then((thread) => {
+    thread?.edit({ appliedTags: tags });
+  });
+}
+
 export async function createComment({
   git_id,
   body,
